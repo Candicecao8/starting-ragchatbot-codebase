@@ -87,31 +87,65 @@ class CourseSearchTool(Tool):
     
     def _format_results(self, results: SearchResults) -> str:
         """Format search results with course and lesson context"""
+        import json
         formatted = []
         sources = []  # Track sources for the UI
-        
+
         for doc, meta in zip(results.documents, results.metadata):
             course_title = meta.get('course_title', 'unknown')
             lesson_num = meta.get('lesson_number')
-            
+
             # Build context header
             header = f"[{course_title}"
             if lesson_num is not None:
                 header += f" - Lesson {lesson_num}"
             header += "]"
-            
-            # Track source for the UI
-            source = course_title
+
+            # Get lesson link from course catalog
+            lesson_link = None
             if lesson_num is not None:
-                source += f" - Lesson {lesson_num}"
-            sources.append(source)
-            
+                lesson_link = self._get_lesson_link(course_title, lesson_num)
+
+            # Track source for the UI with link if available
+            source_text = course_title
+            if lesson_num is not None:
+                source_text += f" - Lesson {lesson_num}"
+
+            source_obj = {"text": source_text}
+            if lesson_link:
+                source_obj["link"] = lesson_link
+
+            sources.append(source_obj)
+
             formatted.append(f"{header}\n{doc}")
-        
+
         # Store sources for retrieval
         self.last_sources = sources
-        
+
         return "\n\n".join(formatted)
+
+    def _get_lesson_link(self, course_title: str, lesson_number: int) -> Optional[str]:
+        """Retrieve lesson link from course catalog"""
+        import json
+        try:
+            # Query course catalog for this course
+            results = self.store.course_catalog.get(
+                ids=[course_title]
+            )
+
+            if results and 'metadatas' in results and results['metadatas']:
+                metadata = results['metadatas'][0]
+                lessons_json = metadata.get('lessons_json')
+
+                if lessons_json:
+                    lessons = json.loads(lessons_json)
+                    for lesson in lessons:
+                        if lesson.get('lesson_number') == lesson_number:
+                            return lesson.get('lesson_link')
+        except Exception as e:
+            print(f"Error retrieving lesson link: {e}")
+
+        return None
 
 class ToolManager:
     """Manages available tools for the AI"""
